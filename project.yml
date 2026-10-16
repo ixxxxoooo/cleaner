@@ -34,6 +34,12 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         # 固定 Bundle ID（ixxxxoooo）。签名时的指定要求（designated requirement）由 restart.sh 重新签名固定为
         # identifier "ixxxxoooo"，这样每次重新编译后 TCC（完全磁盘访问）授权不会失效
+        CODE_SIGN_ENTITLEMENTS: Cleaner.entitlements
+        INFOPLIST_KEY_NSAppleEventsUsageDescription: 需要通过 Finder 清空废纸篓，以真正释放已清理项目占用的磁盘空间。
+        INFOPLIST_KEY_NSDesktopFolderUsageDescription: 需要扫描桌面上的项目目录以查找可清理的构建产物。
+        INFOPLIST_KEY_NSDocumentsFolderUsageDescription: 需要扫描文稿中的项目目录以查找可清理的构建产物。
+        INFOPLIST_KEY_NSDownloadsFolderUsageDescription: 需要扫描下载目录中的项目以查找可清理的构建产物。
+        OTHER_CODE_SIGN_FLAGS: "--requirements '=designated => identifier \"ixxxxoooo\"'"
         ENABLE_DEBUG_DYLIB: NO
         ENABLE_PREVIEWS: NO
         CODE_SIGN_STYLE: Manual

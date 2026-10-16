@@ -20,11 +20,13 @@ public struct ScanOptions: Sendable {
     public var maxDepth: Int
     /// 是否检测体积膨胀的 Git 仓库
     public var includeGit: Bool
+    /// 扫描任务优先级（界面使用 .utility 以保证流畅，命令行使用 .userInitiated）
+    public var priority: TaskPriority
 
     public init(
         homePath: String = NSHomeDirectory(), roots: [String]? = nil, rules: [Rule] = RuleCatalog.builtin,
         whitelist: [String] = [], includeGlobal: Bool = true, dormantDays: Int = 90, maxDepth: Int = 14,
-        includeGit: Bool = true
+        includeGit: Bool = true, priority: TaskPriority = .userInitiated
     ) {
         self.homePath = homePath
         self.roots = roots ?? [homePath]
@@ -34,5 +36,6 @@ public struct ScanOptions: Sendable {
         self.dormantDays = dormantDays
         self.maxDepth = maxDepth
         self.includeGit = includeGit
+        self.priority = priority
     }
 }

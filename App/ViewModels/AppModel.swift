@@ -1,6 +1,7 @@
 // 应用主状态：扫描、勾选、清理、历史、白名单、自定义规则、Git 优化
 // @author ygw
 import SwiftUI
+import AppKit
 import Observation
 import CleanerCore
 
@@ -76,7 +77,10 @@ final class AppModel {
     var levelFilter: LevelFilter = .all
     var grouped = false
     var focusedID: String?
-    var showInspector = true
+    /// 详情栏默认收起，用户的开关选择会被记住
+    var showInspector: Bool = UserDefaults.standard.bool(forKey: "showInspector") {
+        didSet { UserDefaults.standard.set(showInspector, forKey: "showInspector") }
+    }
     var errorMessage: String?
 
     // MARK: 扫描状态
@@ -90,6 +94,10 @@ final class AppModel {
 
     // MARK: 汇总（扫描批次刷新时重新计算）
     private(set) var totalBytes: Int64 = 0
+    private(set) var projectCount = 0
+    private(set) var globalCount = 0
+    /// 本次扫描已发现的结果数（扫描中先展示旧缓存，首批新结果到达后整体替换）
+    private(set) var scanFound = 0
     private(set) var recommendedBytes: Int64 = 0
     private(set) var stackTotals: [StackTotal] = []
     private(set) var freeBytes: Int64 = 0
@@ -120,6 +128,9 @@ final class AppModel {
     private var scanTask: Task<Void, Never>?
     private var pendingItems: [ScanItem] = []
     private var pendingGit: [GitRepoInfo] = []
+    /// 扫描开始后、首批新结果到达前，继续展示旧结果，避免界面闪空
+    private var replaceStale = false
+    private var activeObserver: NSObjectProtocol?
 
     init() {
         if let snapshot = Stores.scanCache.load() {
@@ -131,6 +142,12 @@ final class AppModel {
         refreshDisk()
         refreshPermission()
         applyLaunchArguments()
+        // 用户从系统设置返回时重新检测权限
+        activeObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshPermission() }
+        }
     }
 
     /// 读取启动参数（如 `-section projects -grouped 1`），便于调试与截图
@@ -181,13 +198,17 @@ final class AppModel {
         var total: Int64 = 0
         var recommended: Int64 = 0
         var byStack = [TechStack: (Int64, Int)]()
+        var projects = 0
         for item in items {
+            if item.scope == .project { projects += 1 }
             total += item.sizeBytes
             if item.level == .recommended { recommended += item.sizeBytes }
             let old = byStack[item.stack] ?? (0, 0)
             byStack[item.stack] = (old.0 + item.sizeBytes, old.1 + 1)
         }
         totalBytes = total
+        projectCount = projects
+        globalCount = items.count - projects
         recommendedBytes = recommended
         stackTotals = byStack.map { StackTotal(stack: $0.key, bytes: $0.value.0, count: $0.value.1) }
             .sorted { $0.bytes > $1.bytes }
@@ -231,14 +252,17 @@ final class AppModel {
         scanStartedAt = Date()
         summary = nil
         progress = nil
-        items = []
+        scanFound = 0
+        replaceStale = true
         gitRepos = []
         pendingItems = []
         pendingGit = []
         refreshPermission()
         refreshDisk()
 
-        let options = ScanOptions(rules: activeRules, whitelist: whitelist, dormantDays: dormantDays)
+        var options = ScanOptions(rules: activeRules, whitelist: whitelist, dormantDays: dormantDays)
+        // 低优先级运行，保证扫描满载 CPU 时界面依然流畅
+        options.priority = .utility
         let stream = ScanEngine(options: options).scan()
         let flusher = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -260,6 +284,12 @@ final class AppModel {
         if Task.isCancelled { cancelled = true }
         flusher.cancel()
         flushPending()
+        if replaceStale {
+            // 本次扫描没有任何结果：清空旧缓存
+            items = []
+            replaceStale = false
+            recompute()
+        }
         checked = checked.intersection(Set(items.map(\.id)))
         phase = .finished
         if !cancelled {
@@ -274,6 +304,11 @@ final class AppModel {
     private func flushPending() {
         guard !pendingItems.isEmpty || !pendingGit.isEmpty else { return }
         if !pendingItems.isEmpty {
+            if replaceStale {
+                items = []
+                replaceStale = false
+            }
+            scanFound += pendingItems.count
             items.append(contentsOf: pendingItems)
             items.sort { $0.sizeBytes > $1.sizeBytes }
             pendingItems.removeAll(keepingCapacity: true)

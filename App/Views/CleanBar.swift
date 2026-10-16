@@ -25,11 +25,12 @@ struct CleanBar: View {
                     }
                     Spacer(minLength: 20)
                     Picker("清理方式", selection: $model.cleanMode) {
-                        Text("移入废纸篓（可还原）").tag(CleanMode.trash)
-                        Text("永久删除（不可恢复）").tag(CleanMode.permanent)
+                        Text("移入废纸篓").tag(CleanMode.trash)
+                        Text("永久删除").tag(CleanMode.permanent)
                     }
                     .pickerStyle(.menu)
-                    .frame(width: 210)
+                    .fixedSize()
+                    .help("移入废纸篓可还原，清空废纸篓后才释放空间；永久删除不可恢复")
                     Button("取消选择") { model.clearSelection() }
                         .buttonStyle(.glass)
                     Button {

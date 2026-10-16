@@ -124,11 +124,22 @@ enum SystemActions {
         NSApp.terminate(nil)
     }
 
-    /// 检测是否已具备完全磁盘访问权限（探测受 TCC 保护的目录）
+    /// 检测是否已具备完全磁盘访问权限：探测多个受 TCC 保护的目录
+    /// - Returns: 任一目录可读返回 true；全部被拒绝返回 false；所有目录都不存在时无法判断，按已授权处理
     nonisolated static func hasFullDiskAccess() -> Bool {
-        let probe = NSHomeDirectory() + "/Library/Safari"
-        guard let dir = opendir(probe) else { return errno != EPERM }
-        closedir(dir)
-        return true
+        let home = NSHomeDirectory()
+        let probes = [
+            "Library/Application Support/com.apple.TCC", "Library/Mail", "Library/Messages",
+            "Library/Safari", "Library/Containers/com.apple.stocks",
+        ]
+        var denied = false
+        for relative in probes {
+            if let dir = opendir(home + "/" + relative) {
+                closedir(dir)
+                return true
+            }
+            if errno == EPERM || errno == EACCES { denied = true }
+        }
+        return !denied
     }
 }

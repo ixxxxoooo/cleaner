@@ -101,7 +101,7 @@ public final class ScanEngine: Sendable {
     public func scan() -> AsyncStream<ScanEvent> {
         let options = self.options
         return AsyncStream(bufferingPolicy: .unbounded) { continuation in
-            let task = Task(priority: .userInitiated) {
+            let task = Task(priority: options.priority) {
                 let ctx = ScanContext(options: options, continuation: continuation)
                 let start = ContinuousClock.now
                 await Self.run(ctx)

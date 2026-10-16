@@ -31,8 +31,11 @@ struct ContentView: View {
             InspectorView()
                 .inspectorColumnWidth(min: 260, ideal: 300, max: 380)
         }
-        .searchable(text: $model.searchText, placement: .toolbar, prompt: "搜索名称、路径、技术栈")
         .toolbar { toolbarContent }
+        .onChange(of: model.hasFullDiskAccess) { _, granted in
+            // 授权后重置「忽略」状态，若之后权限被撤销可再次提示
+            if granted { fdaDismissed = false }
+        }
         .modifier(CleanDialogs())
         .alert("出错了", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("好") { model.errorMessage = nil }
@@ -68,7 +71,7 @@ struct ContentView: View {
         switch model.phase {
         case .scanning:
             let p = model.progress
-            return "扫描中 · 已发现 \(model.items.count) 项 · 已访问 \(p?.visitedDirectories ?? 0) 个目录"
+            return "扫描中 · 已发现 \(model.scanFound) 项 · 已访问 \(p?.visitedDirectories ?? 0) 个目录"
         case .finished:
             if let s = model.summary { return "共 \(model.items.count) 项 · \(formatBytes(model.totalBytes)) · 用时 \(String(format: "%.1f", s.duration)) 秒" }
             return ""
@@ -87,11 +90,15 @@ struct ContentView: View {
                 if model.phase == .scanning {
                     Label("取消扫描", systemImage: "stop.fill")
                 } else {
-                    Label("开始扫描", systemImage: "magnifyingglass")
+                    Label("开始扫描", systemImage: "arrow.clockwise")
                 }
             }
+            .labelStyle(.titleAndIcon)
             .help(model.phase == .scanning ? "取消扫描（⌘.）" : "开始扫描（⌘R）")
             .buttonStyle(.glassProminent)
+        }
+        ToolbarItem(placement: .primaryAction) {
+            ToolbarSearchField()
         }
         ToolbarItem(placement: .primaryAction) {
             Button {
@@ -116,10 +123,10 @@ struct SidebarView: View {
             }
             Section("清理") {
                 Label("项目级产物", systemImage: "folder.badge.gearshape")
-                    .badge(model.items.filter { $0.scope == .project }.count)
+                    .badge(model.projectCount)
                     .tag(SidebarSection.projects)
                 Label("全局依赖缓存", systemImage: "externaldrive.badge.icloud")
-                    .badge(model.items.filter { $0.scope == .global }.count)
+                    .badge(model.globalCount)
                     .tag(SidebarSection.global)
                 Label("Git 仓库优化", systemImage: "arrow.triangle.branch")
                     .badge(model.gitRepos.count)
@@ -133,3 +140,37 @@ struct SidebarView: View {
     }
 }
 
+
+/// 工具栏紧凑搜索框（固定宽度，⌘F 聚焦）
+struct ToolbarSearchField: View {
+    @Environment(AppModel.self) private var model
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        @Bindable var model = model
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("搜索", text: $model.searchText)
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .frame(width: 110)
+            if !model.searchText.isEmpty {
+                Button {
+                    model.searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            // 隐藏按钮：提供 ⌘F 快捷键
+            Button("") { focused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .help("搜索名称、路径、技术栈（⌘F）")
+    }
+}
